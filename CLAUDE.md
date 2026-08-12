@@ -13,9 +13,14 @@ All four namespaces from `app/__init__.py` now exist under `app/resources/`. Rea
 - `books` — `GET/POST /books`, `GET/PUT/DELETE /books/<id>`, `POST /books/import` (saves an Open Library result; returns 200 with the existing row instead of 201 when `external_id` is already present)
 - `reviews` — `GET/POST /reviews`, `GET/PUT/DELETE /reviews/<id>`. `GET` takes an optional `?book_id=` filter; `rating` is validated to 1-5; `user_id` is taken from the JWT and never from the payload; `PUT`/`DELETE` return 403 unless the caller authored the review.
 - `users` — `POST /users/register` (409 on duplicate username), `POST /users/login` → `{access_token}`, `GET /users/me`
-- `search` — `GET /search?q=&title=&author=&genre=` over the local catalogue (no parameters means all books), and `GET /search/external?q=&limit=` which proxies Open Library
+- `search` — `GET /search?q=&title=&author=&genre=` over the local catalogue (no parameters means all books), and `GET /search/external?q=&source=&limit=` which proxies a public catalogue
 
-**Open Library integration.** `GET /search/external` calls `https://openlibrary.org/search.json` server-side (no API key), maps hits onto `ExternalBook`, and truncates every string to the `Book` column widths — Postgres rejects overlong values where SQLite silently accepted them. Nothing is persisted until `POST /books/import`, which dedupes on `Book.external_id` (nullable and unique, so hand-entered books coexist with imported ones). A dead or slow Open Library returns 502, not a hang: the request has a 10s timeout.
+**External catalogues.** Two sources, dispatched through the `SOURCES` dict in `app/resources/search.py`, both keyless:
+
+- `gutendex` (default) — `https://gutendex.com/books`, Project Gutenberg. Public domain, so results carry a real `download_url`. It has no page-size parameter (always 32 per page), hence the client-side `[:limit]` slice. Authors arrive as `"Dickens, Charles"` and are flipped by `flip_name`; `pick_download` matches format keys by *prefix* because some carry a charset suffix (`"text/plain; charset=utf-8"`).
+- `openlibrary` — `https://openlibrary.org/search.json`. Far more titles but metadata only, so `download_url` is always None.
+
+Both mappers truncate to the `Book` column widths: Postgres rejects overlong values where SQLite silently accepted them. `external_id` is namespaced `"<source>:<id>"` so the two catalogues cannot collide. Nothing persists until `POST /books/import`, which dedupes on `Book.external_id` (nullable + unique, so hand-entered books coexist). Upstream failures return 502 rather than hanging — every call has a 10s timeout.
 
 JWT identity is stored as `str(user.id)` and read back with `int(get_jwt_identity())`, because flask-jwt-extended rejects a non-string `sub` claim from 4.6 onwards.
 
