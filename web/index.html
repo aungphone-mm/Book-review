@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Review API Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        input, button, select {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        button[disabled] {
+            opacity: 0.6;
+            cursor: progress;
+        }
+        #bookList, #searchResults {
+            list-style-type: none;
+            padding: 0;
+        }
+        #bookList li, #searchResults li {
+            background-color: #f0f0f0;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #bookList li img, #searchResults li img {
+            width: 40px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 3px;
+            background-color: #ddd;
+        }
+        .book-title {
+            flex: 1;
+        }
+        .download-link {
+            color: #0a6;
+            font-weight: bold;
+            text-decoration: none;
+        }
+        /* replaces the alert() boxes the page used to throw */
+        .status {
+            min-height: 1.2em;
+            margin: 4px 0 0;
+            font-size: 0.9em;
+        }
+        .status.error {
+            color: #c00;
+        }
+        .status.ok {
+            color: #0a6;
+        }
+        .status.pending {
+            color: #666;
+        }
+        /* the API sleeps on Render's free tier; this explains the first long wait */
+        #wakeNotice {
+            display: none;
+            background-color: #fff8e0;
+            border: 1px solid #e8d48a;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <h1>Book Review API Interface</h1>
+
+    <p id="wakeNotice">
+        Waking the API&hellip; it is hosted on Render's free tier, which sleeps when idle,
+        so the first request after a quiet spell can take up to a minute.
+    </p>
+
+    <h2>Register</h2>
+    <form id="registerForm">
+        <input type="text" id="regUsername" placeholder="Username" required>
+        <input type="password" id="regPassword" placeholder="Password" required>
+        <button type="submit">Register</button>
+        <p class="status" id="registerStatus"></p>
+    </form>
+
+    <h2>Login</h2>
+    <form id="loginForm">
+        <input type="text" id="username" placeholder="Username" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+        <p class="status" id="loginStatus"></p>
+    </form>
+
+    <h2>Add Book</h2>
+    <form id="addBookForm">
+        <input type="text" id="title" placeholder="Title" required>
+        <input type="text" id="author" placeholder="Author" required>
+        <input type="text" id="genre" placeholder="Genre">
+        <button type="submit">Add Book</button>
+        <p class="status" id="addBookStatus"></p>
+    </form>
+
+    <h2>Find Books Online</h2>
+    <form id="searchForm">
+        <input type="text" id="searchQuery" placeholder="Title, author or keyword" required>
+        <select id="searchSource">
+            <option value="gutendex">Project Gutenberg (downloadable)</option>
+            <option value="openlibrary">Open Library (more titles)</option>
+        </select>
+        <button type="submit">Search</button>
+        <p class="status" id="searchStatus"></p>
+    </form>
+    <ul id="searchResults"></ul>
+
+    <h2>Book List</h2>
+    <button id="refreshBooks">Refresh Book List</button>
+    <p class="status" id="bookListStatus"></p>
+    <ul id="bookList"></ul>
+
+    <script>
+        // Point this at your deployed API, or http://localhost:5000 when running it locally.
+        const API_URL = 'https://book-review-api.onrender.com';
+        let token = '';
+
+        function setStatus(id, text, kind) {
+            const el = document.getElementById(id);
+            el.textContent = text;
+            el.className = 'status' + (kind ? ' ' + kind : '');
+        }
+
+        // flask-restx puts its abort() reason in `message`
+        async function errorText(response) {
+            try {
+                const data = await response.json();
+                return data.message || data.error || 'HTTP ' + response.status;
+            } catch (error) {
+                return 'HTTP ' + response.status;
+            }
+        }
+
+        /* Every request goes through here so a sleeping API shows the banner
+           instead of looking like a page that simply does nothing. */
+        let inFlight = 0;
+        let wakeTimer = null;
+
+        async function apiFetch(path, options) {
+            inFlight += 1;
+            if (wakeTimer === null) {
+                wakeTimer = setTimeout(function () {
+                    document.getElementById('wakeNotice').style.display = 'block';
+                }, 2000);
+            }
+            try {
+                return await fetch(API_URL + path, options);
+            } finally {
+                inFlight -= 1;
+                if (inFlight === 0) {
+                    clearTimeout(wakeTimer);
+                    wakeTimer = null;
+                    document.getElementById('wakeNotice').style.display = 'none';
+                }
+            }
+        }
+
+        // disables the submit button and restores its label whatever happens
+        async function whilePending(button, label, run) {
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = label;
+            try {
+                await run();
+            } finally {
+                button.disabled = false;
+                button.textContent = original;
+            }
+        }
+
+        function authHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            };
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+
+            await whilePending(form.querySelector('button'), 'Registering…', async () => {
+                setStatus('registerStatus', 'Registering…', 'pending');
+                try {
+                    const response = await apiFetch('/users/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    if (response.ok) {
+                        setStatus('registerStatus', 'Registered — you can log in now.', 'ok');
+                        form.reset();
+                        // carry the new name into the login form so it is one click away
+                        document.getElementById('username').value = username;
+                    } else {
+                        setStatus('registerStatus', 'Registration failed: ' + await errorText(response), 'error');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('registerStatus', 'Could not reach the API.', 'error');
+                }
+            });
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            await whilePending(form.querySelector('button'), 'Logging in…', async () => {
+                setStatus('loginStatus', 'Logging in…', 'pending');
+                try {
+                    const response = await apiFetch('/users/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        token = data.access_token;
+                        setStatus('loginStatus', 'Logged in as ' + username + '.', 'ok');
+                    } else {
+                        setStatus('loginStatus', 'Login failed: ' + await errorText(response), 'error');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('loginStatus', 'Could not reach the API.', 'error');
+                }
+            });
+        });
+
+        document.getElementById('addBookForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const title = document.getElementById('title').value;
+            const author = document.getElementById('author').value;
+            // POST /books reads payload['genre'] directly, so the key must always be present
+            const genre = document.getElementById('genre').value;
+
+            if (!token) {
+                setStatus('addBookStatus', 'Log in before adding a book.', 'error');
+                return;
+            }
+
+            await whilePending(form.querySelector('button'), 'Adding…', async () => {
+                setStatus('addBookStatus', 'Adding…', 'pending');
+                try {
+                    const response = await apiFetch('/books', {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ title, author, genre })
+                    });
+                    if (response.ok) {
+                        setStatus('addBookStatus', 'Book added.', 'ok');
+                        form.reset();
+                        fetchBooks();
+                    } else {
+                        setStatus('addBookStatus', 'Failed to add book: ' + await errorText(response), 'error');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('addBookStatus', 'Could not reach the API.', 'error');
+                }
+            });
+        });
+
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const q = document.getElementById('searchQuery').value;
+            const source = document.getElementById('searchSource').value;
+            const results = document.getElementById('searchResults');
+
+            await whilePending(form.querySelector('button'), 'Searching…', async () => {
+                setStatus('searchStatus', 'Searching ' + source + '…', 'pending');
+                results.innerHTML = '';
+                try {
+                    const response = await apiFetch(
+                        '/search/external?q=' + encodeURIComponent(q) + '&source=' + source
+                    );
+                    if (!response.ok) {
+                        setStatus('searchStatus', 'Search failed: ' + await errorText(response), 'error');
+                        return;
+                    }
+                    const books = await response.json();
+                    if (books.length === 0) {
+                        setStatus('searchStatus', 'No matches.', '');
+                        return;
+                    }
+                    setStatus('searchStatus', books.length + ' result(s).', 'ok');
+                    books.forEach(book => {
+                        const li = renderBook(book);
+                        const button = document.createElement('button');
+                        button.textContent = 'Import';
+                        button.addEventListener('click', () => importBook(book, button));
+                        li.appendChild(button);
+                        results.appendChild(li);
+                    });
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('searchStatus', 'Could not reach the API.', 'error');
+                }
+            });
+        });
+
+        // one row layout shared by search results and the imported book list
+        function renderBook(book) {
+            const li = document.createElement('li');
+
+            const cover = document.createElement('img');
+            cover.alt = '';
+            if (book.cover_url) {
+                cover.src = book.cover_url;
+            }
+            li.appendChild(cover);
+
+            const label = document.createElement('span');
+            label.className = 'book-title';
+            label.textContent = `${book.title} by ${book.author}` + (book.year ? ` (${book.year})` : '');
+            li.appendChild(label);
+
+            if (book.download_url) {
+                const download = document.createElement('a');
+                download.className = 'download-link';
+                download.href = book.download_url;
+                download.target = '_blank';
+                download.rel = 'noopener';
+                download.textContent = 'Download';
+                li.appendChild(download);
+            }
+
+            return li;
+        }
+
+        async function importBook(book, button) {
+            if (!token) {
+                setStatus('searchStatus', 'Log in before importing.', 'error');
+                return;
+            }
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Importing…';
+            try {
+                const response = await apiFetch('/books/import', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        external_id: book.external_id,
+                        title: book.title,
+                        author: book.author,
+                        genre: book.genre,
+                        cover_url: book.cover_url,
+                        download_url: book.download_url
+                    })
+                });
+                if (response.ok) {
+                    // 201 means it was created, 200 that it was already in the catalogue
+                    button.textContent = response.status === 201 ? 'Imported' : 'Already added';
+                    fetchBooks();
+                } else {
+                    setStatus('searchStatus', 'Import failed: ' + await errorText(response), 'error');
+                    button.disabled = false;
+                    button.textContent = original;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                setStatus('searchStatus', 'Could not reach the API.', 'error');
+                button.disabled = false;
+                button.textContent = original;
+            }
+        }
+
+        document.getElementById('refreshBooks').addEventListener('click', fetchBooks);
+
+        async function fetchBooks() {
+            const button = document.getElementById('refreshBooks');
+            await whilePending(button, 'Loading…', async () => {
+                setStatus('bookListStatus', 'Loading books…', 'pending');
+                try {
+                    const response = await apiFetch('/books');
+                    if (!response.ok) {
+                        setStatus('bookListStatus', 'Could not load books: ' + await errorText(response), 'error');
+                        return;
+                    }
+                    const books = await response.json();
+                    const bookList = document.getElementById('bookList');
+                    bookList.innerHTML = '';
+                    books.forEach(book => bookList.appendChild(renderBook(book)));
+                    setStatus('bookListStatus', books.length + ' book(s) in the catalogue.', '');
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('bookListStatus', 'Could not reach the API.', 'error');
+                }
+            });
+        }
+
+        fetchBooks();
+    </script>
+</body>
+</html>
