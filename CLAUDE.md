@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Flask + Flask-RESTX JSON API for books, reviews, users, and search, deployed to Render. Despite living under a directory named `node/`, there is no JavaScript build — `web/index.html` is a single standalone browser client, deployed separately to Vercel.
+A Flask + Flask-RESTX JSON API for books, reviews, users, and search. `render.yaml` is the intended API deployment path — as of 2026-08-12 nothing answers at `book-review-api.onrender.com`, so treat that hostname as unconfirmed rather than live. Despite living under a directory named `node/`, there is no JavaScript build — `web/index.html` is a single standalone browser client, deployed separately to Vercel.
 
 ## Endpoints
 

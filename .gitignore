@@ -10,3 +10,6 @@ instance/
 
 venv/
 .venv/
+
+# playwright-mcp snapshots
+.playwright-mcp/
