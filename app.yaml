@@ -1,0 +1,18 @@
+runtime: python39
+
+entrypoint: gunicorn -b :$PORT run:app
+
+# Set these with `gcloud app deploy --set-env-vars` or Secret Manager.
+# Never commit the real values -- the pair that used to live here is burned.
+env_variables:
+  SECRET_KEY: "set-me-before-deploying"
+  JWT_SECRET_KEY: "set-me-before-deploying"
+
+automatic_scaling:
+  min_instances: 1
+  max_instances: 2
+
+resources:
+  cpu: 1
+  memory_gb: 0.5
+  disk_size_gb: 10

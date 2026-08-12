@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+
+# local SQLite database, recreated by `python run.py`
+*.db
+instance/
+
+# local secrets
+.env
+
+venv/
+.venv/
