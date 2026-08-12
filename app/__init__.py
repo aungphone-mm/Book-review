@@ -1,10 +1,16 @@
-from flask import Flask
+import os
+
+from flask import Flask, send_from_directory
 from flask_restx import Api
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS  # Add this import
 
 from config import Config
+
+# web/ sits beside app/, not inside it, so this cannot be a relative path:
+# Flask resolves those against the package directory
+WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web')
 
 db = SQLAlchemy()
 jwt = JWTManager()
@@ -28,5 +34,13 @@ def create_app():
     api.add_namespace(review_ns)
     api.add_namespace(user_ns)
     api.add_namespace(search_ns)
+
+    # the browser client. Flask-RESTX owns / for Swagger, so it lives at /app;
+    # both spellings are registered because '/app' alone would 404 on '/app/'
+    @app.route('/app')
+    @app.route('/app/')
+    def client():
+        '''Serve the single-page browser client'''
+        return send_from_directory(WEB_DIR, 'index.html')
 
     return app

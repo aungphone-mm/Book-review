@@ -84,8 +84,8 @@
     <h1>Book Review API Interface</h1>
 
     <p id="wakeNotice">
-        Waking the API&hellip; it is hosted on Render's free tier, which sleeps when idle,
-        so the first request after a quiet spell can take up to a minute.
+        Still working&hellip; searches of the public catalogues can be slow, and on a free
+        host the API sleeps when idle, so a request after a quiet spell can take a minute.
     </p>
 
     <h2>Register</h2>
@@ -131,8 +131,10 @@
     <ul id="bookList"></ul>
 
     <script>
-        // Point this at your deployed API, or http://localhost:5000 when running it locally.
-        const API_URL = 'https://book-review-api.onrender.com';
+        // The API serves this page at /app, so same-origin relative paths just work
+        // wherever it is deployed. Only set an absolute URL (e.g. http://localhost:5000)
+        // if you open this file directly from disk instead of through Flask.
+        const API_URL = '';
         let token = '';
 
         function setStatus(id, text, kind) {
