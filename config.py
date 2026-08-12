@@ -27,3 +27,11 @@ class Config:
     SQLALCHEMY_DATABASE_URI = database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_SECRET_KEY = secret('JWT_SECRET_KEY', 'dev-only-jwt-secret-key')
+    # Neon suspends an idle compute and drops its connections. Without a
+    # liveness check the pool hands a dead socket to the next request and it
+    # fails with "server closed the connection unexpectedly"; pre_ping costs
+    # one round trip and retries transparently instead.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+    }
