@@ -31,11 +31,25 @@
             padding: 10px;
             border-radius: 5px;
         }
-        #searchResults li {
+        #bookList li, #searchResults li {
             display: flex;
             align-items: center;
-            justify-content: space-between;
             gap: 10px;
+        }
+        #bookList li img, #searchResults li img {
+            width: 40px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 3px;
+            background-color: #ddd;
+        }
+        .book-title {
+            flex: 1;
+        }
+        .download-link {
+            color: #0a6;
+            font-weight: bold;
+            text-decoration: none;
         }
     </style>
 </head>
@@ -67,7 +81,11 @@
     <h2>Find Books Online</h2>
     <form id="searchForm">
         <input type="text" id="searchQuery" placeholder="Title, author or keyword" required>
-        <button type="submit">Search Open Library</button>
+        <select id="searchSource">
+            <option value="gutendex">Project Gutenberg (downloadable)</option>
+            <option value="openlibrary">Open Library (more titles)</option>
+        </select>
+        <button type="submit">Search</button>
     </form>
     <ul id="searchResults"></ul>
 
@@ -166,7 +184,8 @@
             results.innerHTML = '<li>Searching...</li>';
 
             try {
-                const response = await fetch(`${API_URL}/search/external?q=${encodeURIComponent(q)}`);
+                const source = document.getElementById('searchSource').value;
+                const response = await fetch(`${API_URL}/search/external?q=${encodeURIComponent(q)}&source=${source}`);
                 const books = await response.json();
                 if (!response.ok) {
                     results.innerHTML = `<li>Search failed: ${books.message}</li>`;
@@ -178,13 +197,10 @@
                     return;
                 }
                 books.forEach(book => {
-                    const li = document.createElement('li');
-                    const label = document.createElement('span');
-                    label.textContent = `${book.title} by ${book.author}` + (book.year ? ` (${book.year})` : '');
+                    const li = renderBook(book);
                     const button = document.createElement('button');
                     button.textContent = 'Import';
                     button.addEventListener('click', () => importBook(book, button));
-                    li.appendChild(label);
                     li.appendChild(button);
                     results.appendChild(li);
                 });
@@ -193,6 +209,35 @@
                 results.innerHTML = '<li>An error occurred while searching.</li>';
             }
         });
+
+        // one row layout shared by search results and the imported book list
+        function renderBook(book) {
+            const li = document.createElement('li');
+
+            const cover = document.createElement('img');
+            cover.alt = '';
+            if (book.cover_url) {
+                cover.src = book.cover_url;
+            }
+            li.appendChild(cover);
+
+            const label = document.createElement('span');
+            label.className = 'book-title';
+            label.textContent = `${book.title} by ${book.author}` + (book.year ? ` (${book.year})` : '');
+            li.appendChild(label);
+
+            if (book.download_url) {
+                const download = document.createElement('a');
+                download.className = 'download-link';
+                download.href = book.download_url;
+                download.target = '_blank';
+                download.rel = 'noopener';
+                download.textContent = 'Download';
+                li.appendChild(download);
+            }
+
+            return li;
+        }
 
         async function importBook(book, button) {
             if (!token) {
@@ -211,7 +256,9 @@
                         external_id: book.external_id,
                         title: book.title,
                         author: book.author,
-                        genre: book.genre
+                        genre: book.genre,
+                        cover_url: book.cover_url,
+                        download_url: book.download_url
                     })
                 });
                 const data = await response.json();
@@ -238,11 +285,7 @@
                 const books = await response.json();
                 const bookList = document.getElementById('bookList');
                 bookList.innerHTML = '';
-                books.forEach(book => {
-                    const li = document.createElement('li');
-                    li.textContent = `${book.title} by ${book.author} (${book.genre})`;
-                    bookList.appendChild(li);
-                });
+                books.forEach(book => bookList.appendChild(renderBook(book)));
             } catch (error) {
                 console.error('Error:', error);
                 alert('An error occurred while fetching books.');

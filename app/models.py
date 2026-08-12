@@ -17,9 +17,12 @@ class Book(db.Model):
     title = db.Column(db.String(100), nullable=False)
     author = db.Column(db.String(100), nullable=False)
     genre = db.Column(db.String(50))
-    # Open Library work key for imported books, NULL for hand-entered ones;
+    # "<source>:<id>" for imported books, NULL for hand-entered ones;
     # several NULLs are allowed alongside the unique constraint
     external_id = db.Column(db.String(64), unique=True)
+    cover_url = db.Column(db.String(255))
+    # only Project Gutenberg titles are downloadable; NULL everywhere else
+    download_url = db.Column(db.String(255))
     reviews = db.relationship('Review', backref='book', lazy='dynamic')
 
 class Review(db.Model):

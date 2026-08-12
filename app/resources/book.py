@@ -10,14 +10,18 @@ book_model = ns.model('Book', {
     'title': fields.String(required=True),
     'author': fields.String(required=True),
     'genre': fields.String(),
-    'external_id': fields.String(readonly=True)
+    'external_id': fields.String(readonly=True),
+    'cover_url': fields.String(readonly=True),
+    'download_url': fields.String(readonly=True)
 })
 
 import_model = ns.model('BookImport', {
-    'external_id': fields.String(required=True, description='Open Library work key from /search/external'),
+    'external_id': fields.String(required=True, description='"<source>:<id>" from /search/external'),
     'title': fields.String(required=True),
     'author': fields.String(required=True),
-    'genre': fields.String()
+    'genre': fields.String(),
+    'cover_url': fields.String(),
+    'download_url': fields.String()
 })
 
 @ns.route('')
@@ -53,11 +57,15 @@ class BookImport(Resource):
         if existing:
             return existing, 200
         genre = ns.payload.get('genre')
+        cover_url = ns.payload.get('cover_url')
+        download_url = ns.payload.get('download_url')
         book = Book(
             title=ns.payload['title'][:100],
             author=ns.payload['author'][:100],
             genre=genre[:50] if genre else None,
-            external_id=external_id[:64]
+            external_id=external_id[:64],
+            cover_url=cover_url[:255] if cover_url else None,
+            download_url=download_url[:255] if download_url else None
         )
         db.session.add(book)
         db.session.commit()
